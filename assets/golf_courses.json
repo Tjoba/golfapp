@@ -6312,7 +6312,10 @@
       "website": "https://sgk.nu/"
     },
     "logo": "assets/courses/logos/sgk.png",
-    "mainImage": "assets/courses/images/sgk_001.jpg"
+    "mainImage": "assets/courses/images/sgk_001.jpg",
+    "holes": {
+      "course1": "18 hole"
+    }
   },
   {
     "id": 3942404,
@@ -6672,7 +6675,11 @@
       "website": "https://www.fagelbrogolf.se/",
       "wikidata": "Q10500917"
     },
-    "logo": "assets/courses/logos/fagelbro.png"
+    "logo": "assets/courses/logos/fagelbro.png",
+    "holes": {
+      "course1": "18 hole",
+      "course2": "9 hole"
+    }
   },
   {
     "id": 4427161,
@@ -7501,7 +7508,12 @@
       "website": "https://www.brohofslott.se/",
       "wikidata": "Q2213522"
     },
-    "logo": "assets/courses/logos/bro-hof.jpeg"
+    "logo": "assets/courses/logos/bro-hof.jpeg",
+    "mainImage": "assets/courses/images/brohof_001.webp",
+    "holes": {
+      "course1": "18 hole",
+      "course2": "9 hole"
+    }
   },
   {
     "id": 5598137,

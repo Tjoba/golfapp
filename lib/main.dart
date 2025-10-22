@@ -540,53 +540,94 @@ class CourseDetailPage extends StatelessWidget {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (mainImage != null && mainImage.isNotEmpty)
-                Image.asset(
-                  mainImage,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: screenHeight * 0.3,
-                ),
-              SizedBox(height: 40), // Space for logo overlay
-              Expanded(
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: ListView(
-                      children: [
-                        Row(
-                          children: [
-                            // Removed SizedBox(width: 76), so course name starts at left
-                            Expanded(
-                              child: Text(course['name'] ?? '', style: Theme.of(context).textTheme.titleLarge),
-                            ),
-                          ],
+          SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (mainImage != null && mainImage.isNotEmpty)
+                  Stack(
+                    children: [
+                      Image.asset(
+                        mainImage,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: screenHeight * 0.3,
+                      ),
+                      Positioned(
+                        top: 60,
+                        left: 16,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.7),
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.arrow_back),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
                         ),
-                        const SizedBox(height: 16),
-                        Text('Latitude: ${course['lat'] ?? "-"}', style: detailTextStyle),
-                        Text('Longitude: ${course['lon'] ?? "-"}', style: detailTextStyle),
-                        Text('Type: ${course['type'] ?? "-"}', style: detailTextStyle),
-                        ...tags.entries.map((entry) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Text('${entry.key}: ${entry.value}', style: detailTextStyle),
-                          );
-                        }).toList(),
-                        ...course.keys.where((k) => k != 'id' && k != 'type' && k != 'name' && k != 'lat' && k != 'lon' && k != 'tags' && k != 'logo' && k != 'mainImage').map((k) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Text('$k: ${course[k]}', style: detailTextStyle),
-                          );
-                        }).toList(),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(course['name'] ?? '', style: Theme.of(context).textTheme.headlineMedium),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Builder(
+                        builder: (context) {
+                          final tags = course['tags'] as Map<String, dynamic>? ?? {};
+                          final street = tags['addr:street'] ?? '';
+                          final housenumber = tags['addr:housenumber'] ?? '';
+                          final city = tags['addr:city'] ?? '';
+                          String address = '';
+                          if (street != '' || housenumber != '' || city != '') {
+                            address = [street, housenumber].where((v) => v != '').join(' ');
+                            if (city != '') {
+                              address = address.isNotEmpty ? '$address, $city' : city;
+                            }
+                          }
+                          return address.isNotEmpty
+                              ? Text(address, style: Theme.of(context).textTheme.bodyMedium)
+                              : const SizedBox.shrink();
+                        },
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+                Container(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Latitude: ${course['lat'] ?? "-"}', style: detailTextStyle),
+                      Text('Longitude: ${course['lon'] ?? "-"}', style: detailTextStyle),
+                      Text('Type: ${course['type'] ?? "-"}', style: detailTextStyle),
+                      ...tags.entries.map((entry) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Text('${entry.key}: ${entry.value}', style: detailTextStyle),
+                        );
+                      }).toList(),
+                      ...course.keys.where((k) => k != 'id' && k != 'type' && k != 'name' && k != 'lat' && k != 'lon' && k != 'tags' && k != 'logo' && k != 'mainImage').map((k) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Text('$k: ${course[k]}', style: detailTextStyle),
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
           if (course['logo'] != null)
             Positioned(

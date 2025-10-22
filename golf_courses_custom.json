@@ -2,11 +2,19 @@
     {
         "id": 3928713,
         "logo": "assets/courses/logos/sgk.png",
-        "mainImage": "assets/courses/images/sgk_001.jpg"
+        "mainImage": "assets/courses/images/sgk_001.jpg",
+        "holes": {
+            "course1": "18 hole"
+        }
     },
     {
         "id": 5509342,
-        "logo": "assets/courses/logos/bro-hof.jpeg"
+        "logo": "assets/courses/logos/bro-hof.jpeg",
+        "mainImage": "assets/courses/images/brohof_001.webp",
+        "holes": {
+            "course1": "18 hole",
+            "course2": "9 hole"
+        }
     },
     {
         "id": 4111464,
@@ -14,7 +22,11 @@
     },
     {
         "id": 4427144,
-        "logo": "assets/courses/logos/fagelbro.png"
+        "logo": "assets/courses/logos/fagelbro.png",
+        "holes": {
+            "course1": "18 hole",
+            "course2": "9 hole"
+        }
     },
     {
         "id": 2384348,
