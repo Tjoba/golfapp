@@ -18,11 +18,21 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   bool _loggedIn = false;
   bool _loading = true;
+  List<Map<String, dynamic>>? _preloadedCourses;
 
   @override
   void initState() {
     super.initState();
+    _preloadCourses();
     _checkLogin();
+  }
+
+  Future<void> _preloadCourses() async {
+    final data = await rootBundle.loadString('assets/golf_courses.json');
+    final List<dynamic> jsonList = json.decode(data);
+    setState(() {
+      _preloadedCourses = jsonList.cast<Map<String, dynamic>>();
+    });
   }
 
   Future<void> _checkLogin() async {
@@ -78,10 +88,10 @@ class _MyAppState extends State<MyApp> {
         ),
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: _loading
+      home: _loading || _preloadedCourses == null
           ? const Center(child: CircularProgressIndicator())
           : _loggedIn
-              ? MainNavigation(onLogout: _onLogout)
+              ? MainNavigation(onLogout: _onLogout, preloadedCourses: _preloadedCourses!)
               : LoginPage(onLogin: _onLogin),
     );
   }
@@ -89,7 +99,8 @@ class _MyAppState extends State<MyApp> {
 
 class MainNavigation extends StatefulWidget {
   final VoidCallback? onLogout;
-  const MainNavigation({super.key, this.onLogout});
+  final List<Map<String, dynamic>> preloadedCourses;
+  const MainNavigation({super.key, this.onLogout, required this.preloadedCourses});
 
   @override
   State<MainNavigation> createState() => _MainNavigationState();
@@ -105,7 +116,7 @@ class _MainNavigationState extends State<MainNavigation> {
     super.initState();
     _pages = <Widget>[
       Center(child: Text('Home', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 16))),
-      PlayPage(),
+      PlayPage(preloadedCourses: widget.preloadedCourses),
       Center(child: Text('Book', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 16))),
       YouPage(onLogout: widget.onLogout),
     ];
@@ -330,52 +341,79 @@ class _SettingsPageState extends State<SettingsPage> {
 }
 
 class PlayPage extends StatefulWidget {
-  const PlayPage({super.key});
+  final List<Map<String, dynamic>> preloadedCourses;
+  final void Function()? onFavoritesChanged;
+  const PlayPage({super.key, required this.preloadedCourses, this.onFavoritesChanged});
   @override
   State<PlayPage> createState() => _PlayPageState();
 }
 
 class _PlayPageState extends State<PlayPage> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadRecentCourses();
+    _loadFavorites();
+  }
+  Future<void> _loadFavorites() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favIds = prefs.getStringList('favorite_course_ids') ?? [];
+    setState(() {
+      favoriteCourses = favIds.map((id) => courses.firstWhere(
+        (course) => course['id'].toString() == id,
+        orElse: () => {},
+      )).where((course) => course.isNotEmpty).toList();
+    });
+  }
   List<Map<String, dynamic>> courses = [];
   List<Map<String, dynamic>> filteredCourses = [];
+  List<Map<String, dynamic>> favoriteCourses = [];
+  List<Map<String, dynamic>> recentCourses = [];
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  List<Map<String, dynamic>> recentCourses = [];
   bool hasSearched = false;
   bool isSearchFocused = false;
 
   @override
   void initState() {
     super.initState();
-    _loadCourses();
-    _loadRecentCourses();
+    courses = widget.preloadedCourses;
+    filteredCourses = [];
     _searchController.addListener(_onSearchChanged);
     _searchFocusNode.addListener(() {
       setState(() {
         isSearchFocused = _searchFocusNode.hasFocus;
       });
     });
-  }
-
-  Future<void> _loadCourses() async {
-    final data = await rootBundle.loadString('assets/golf_courses.json');
-    final List<dynamic> jsonList = json.decode(data);
-    setState(() {
-      courses = jsonList.cast<Map<String, dynamic>>();
-      filteredCourses = [];
-    });
-    await _loadRecentCourses();
+    _loadRecentCourses();
+    _loadFavorites();
   }
 
   Future<void> _loadRecentCourses() async {
     // Use SharedPreferences for persistence
     final prefs = await SharedPreferences.getInstance();
     final recentIds = prefs.getStringList('recent_course_ids') ?? [];
+    // Exclude favorites from recent searches
+    final favoriteIds = favoriteCourses.map((fav) => fav['id']?.toString()).toSet();
+    final nonFavoriteRecentIds = recentIds.where((id) => !favoriteIds.contains(id)).toList();
+    // Always show 5 items: take the first 5, and if less than 5, fill with older non-favorite searches
+    List<String> displayIds = [];
+    for (var id in nonFavoriteRecentIds) {
+      if (!displayIds.contains(id)) displayIds.add(id);
+      if (displayIds.length == 5) break;
+    }
+    // If less than 5, fill with older non-favorite searches (from the end)
+    if (displayIds.length < 5) {
+      for (var id in nonFavoriteRecentIds.reversed) {
+        if (!displayIds.contains(id)) displayIds.add(id);
+        if (displayIds.length == 5) break;
+      }
+    }
     setState(() {
-      recentCourses = recentIds.map((id) => courses.firstWhere(
+      recentCourses = displayIds.map((id) => courses.firstWhere(
         (course) => course['id'].toString() == id,
         orElse: () => {},
-      )).where((course) => course.isNotEmpty).take(5).toList();
+      )).where((course) => course.isNotEmpty).toList();
     });
   }
 
@@ -385,11 +423,11 @@ class _PlayPageState extends State<PlayPage> {
     final id = course['id'].toString();
     recentIds.remove(id); // Remove if already exists
     recentIds.insert(0, id); // Add to front
-    while (recentIds.length > 5) {
-      recentIds.removeLast();
-    }
+    // Do not trim to 5 here; keep all for filtering and display
     await prefs.setStringList('recent_course_ids', recentIds);
     _loadRecentCourses();
+    // Also reload favorites in case favorite status changed
+    _loadFavorites();
   }
 
   void _onSearchChanged() {
@@ -407,9 +445,10 @@ class _PlayPageState extends State<PlayPage> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               decoration: BoxDecoration(
@@ -444,81 +483,141 @@ class _PlayPageState extends State<PlayPage> {
                 },
               ),
             ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: (isSearchFocused && _searchController.text.isNotEmpty)
-                  ? ListView.builder(
-                      itemCount: filteredCourses.length,
-                      itemBuilder: (context, index) {
-                        final course = filteredCourses[index];
-                        final city = course['tags']?['addr:city'] ?? '-';
-                        return Container(
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
+            if (favoriteCourses.isNotEmpty && !isSearchFocused && _searchController.text.isEmpty) ...[
+              const SizedBox(height: 16),
+              Text('Favorites', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 8),
+              ...(() {
+                final sortedFavorites = List<Map<String, dynamic>>.from(favoriteCourses);
+                sortedFavorites.sort((a, b) => (a['name'] ?? '').toString().compareTo((b['name'] ?? '').toString()));
+                return sortedFavorites.map((course) {
+                  final cityRaw = course['tags']?['addr:city'];
+                  final city = (cityRaw == null || cityRaw is! String || cityRaw.isEmpty || cityRaw == 'NaN') ? '-' : cityRaw;
+                  return Container(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListTile(
+                      leading: course['logo'] != null
+                          ? Image.asset(
+                              course['logo'],
+                              width: (40.0.isNaN || 40.0.isInfinite || 40.0 <= 0) ? 32 : 40,
+                              height: (40.0.isNaN || 40.0.isInfinite || 40.0 <= 0) ? 32 : 40,
+                              fit: BoxFit.cover,
+                            )
+                          : const Icon(Icons.golf_course),
+                      title: Row(
+                        children: [
+                          Expanded(child: Text(course['name'] ?? '')),
+                          Icon(
+                            favoriteCourses.any((fav) => fav['id']?.toString() == course['id']?.toString())
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            color: favoriteCourses.any((fav) => fav['id']?.toString() == course['id']?.toString())
+                                ? Colors.red
+                                : Colors.grey,
+                            size: 20,
                           ),
-                          child: ListTile(
-                            leading: course['logo'] != null
-                                ? Image.asset(course['logo'], width: 40, height: 40, fit: BoxFit.cover)
-                                : const Icon(Icons.golf_course),
-                            title: Text(course['name'] ?? ''),
-                            subtitle: Text(city.toString()),
-                            onTap: () async {
-                              await _addRecentCourse(course);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => CourseDetailPage(course: course),
-                                ),
-                              );
-                            },
+                        ],
+                      ),
+                      subtitle: Text(city.toString()),
+                      onTap: () async {
+                        await _addRecentCourse(course);
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CourseDetailPage(
+                              course: course,
+                              onFavoritesChanged: () {
+                                _loadFavorites();
+                                _loadRecentCourses();
+                              },
+                            ),
                           ),
                         );
                       },
-                    )
-                  : (!isSearchFocused && _searchController.text.isEmpty)
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Recent Searches', style: Theme.of(context).textTheme.headlineSmall),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: ListView.builder(
-                                itemCount: recentCourses.length,
-                                itemBuilder: (context, index) {
-                                  final course = recentCourses[index];
-                                  final city = course['tags']?['addr:city'] ?? '-';
-                                  return Container(
-                                    margin: const EdgeInsets.symmetric(vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: ListTile(
-                                      leading: course['logo'] != null
-                                          ? Image.asset(course['logo'], width: 40, height: 40, fit: BoxFit.cover)
-                                          : const Icon(Icons.golf_course),
-                                      title: Text(course['name'] ?? ''),
-                                      subtitle: Text(city.toString()),
-                                      onTap: () async {
-                                        await _addRecentCourse(course);
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => CourseDetailPage(course: course),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        )
-                      : Container(),
-            ),
+                    ),
+                  );
+                }).toList();
+              })(),
+            ],
+            const SizedBox(height: 16),
+            if (!isSearchFocused && _searchController.text.isEmpty) ...[
+              Text('Recent Searches', style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 8),
+              ...recentCourses.where((course) {
+                // Hide if course is a favorite
+                final courseId = course['id']?.toString();
+                return !favoriteCourses.any((fav) => fav['id']?.toString() == courseId);
+              }).map((course) {
+                final city = course['tags']?['addr:city'] ?? '-';
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListTile(
+                    leading: course['logo'] != null
+                        ? Image.asset(course['logo'], width: 40, height: 40, fit: BoxFit.cover)
+                        : const Icon(Icons.golf_course),
+                    title: Text(course['name'] ?? ''),
+                    subtitle: Text(city.toString()),
+                    onTap: () async {
+                      await _addRecentCourse(course);
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CourseDetailPage(
+                            course: course,
+                            onFavoritesChanged: () {
+                              _loadFavorites();
+                              _loadRecentCourses();
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              }),
+            ],
+            if (isSearchFocused && _searchController.text.isNotEmpty) ...[
+              ...filteredCourses.map((course) {
+                final city = course['tags']?['addr:city'] ?? '-';
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListTile(
+                    leading: course['logo'] != null
+                        ? Image.asset(course['logo'], width: 40, height: 40, fit: BoxFit.cover)
+                        : const Icon(Icons.golf_course),
+                    title: Text(course['name'] ?? ''),
+                    subtitle: Text(city.toString()),
+                    onTap: () async {
+                      await _addRecentCourse(course);
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CourseDetailPage(
+                            course: course,
+                            onFavoritesChanged: () {
+                              _loadFavorites();
+                              _loadRecentCourses();
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              }),
+            ],
           ],
         ),
       ),
@@ -526,16 +625,68 @@ class _PlayPageState extends State<PlayPage> {
   }
 }
 
-class CourseDetailPage extends StatelessWidget {
+
+class CourseDetailPage extends StatefulWidget {
   final Map<String, dynamic> course;
-  const CourseDetailPage({super.key, required this.course});
+  final void Function()? onFavoritesChanged;
+  const CourseDetailPage({super.key, required this.course, this.onFavoritesChanged});
+
+  @override
+  State<CourseDetailPage> createState() => _CourseDetailPageState();
+}
+
+class _CourseDetailPageState extends State<CourseDetailPage> {
+  int selectedPlayerCount = 1;
+  final List<String> gameTypes = ['Stroke Play', 'Match Play', 'Stableford'];
+  String selectedGameType = 'Stroke Play';
+  bool isFavorite = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavorite();
+  }
+
+  Future<void> _loadFavorite() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favIds = prefs.getStringList('favorite_course_ids') ?? [];
+    setState(() {
+      isFavorite = favIds.contains(widget.course['id'].toString());
+    });
+  }
+
+  Future<void> _toggleFavorite() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favIds = prefs.getStringList('favorite_course_ids') ?? [];
+    final id = widget.course['id'].toString();
+    setState(() {
+      if (isFavorite) {
+        favIds.remove(id);
+        isFavorite = false;
+      } else {
+        favIds.add(id);
+        isFavorite = true;
+      }
+    });
+    await prefs.setStringList('favorite_course_ids', favIds);
+    if (widget.onFavoritesChanged != null) {
+      widget.onFavoritesChanged!();
+    }
+  }
+  int selectedHoleIndex = 0;
 
   @override
   Widget build(BuildContext context) {
-    final tags = course['tags'] as Map<String, dynamic>? ?? {};
-    final detailTextStyle = Theme.of(context).textTheme.bodyMedium;
+    final course = widget.course;
     final mainImage = course['mainImage'];
-    final screenHeight = MediaQuery.of(context).size.height;
+    final screenHeightRaw = MediaQuery.of(context).size.height;
+    final screenHeight = (screenHeightRaw.isNaN || screenHeightRaw.isInfinite || screenHeightRaw <= 0)
+        ? 600.0
+        : screenHeightRaw;
+    double safeHeight(double value, double fallback) {
+      if (value.isNaN || value.isInfinite || value <= 0) return fallback;
+      return value;
+    }
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
@@ -544,31 +695,54 @@ class CourseDetailPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (mainImage != null && mainImage.isNotEmpty)
-                  Stack(
-                    children: [
-                      Image.asset(
-                        mainImage,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: screenHeight * 0.3,
-                      ),
-                      Positioned(
-                        top: 60,
-                        left: 16,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.7),
-                            shape: BoxShape.circle,
+                Stack(
+                  children: [
+                    Image.asset(
+                      (mainImage != null && mainImage.isNotEmpty)
+                          ? mainImage
+                          : 'assets/courses/images/placeholder.jpg',
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: safeHeight((screenHeight * 0.3).isNaN || (screenHeight * 0.3).isInfinite || (screenHeight * 0.3) <= 0 ? 200 : screenHeight * 0.3, 200),
+                    ),
+                    // Removed centered logo above the image. Only the logo to the right is shown.
+                    // Back button and favorite icon
+                    Positioned(
+                      top: 60,
+                      left: 16,
+                      right: 16,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.7),
+                              shape: BoxShape.circle,
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.arrow_back),
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
                           ),
-                          child: IconButton(
-                            icon: const Icon(Icons.arrow_back),
-                            onPressed: () => Navigator.of(context).pop(),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.7),
+                              shape: BoxShape.circle,
+                            ),
+                            child: IconButton(
+                              icon: Icon(
+                                isFavorite ? Icons.favorite : Icons.favorite_border,
+                                color: isFavorite ? Colors.red : Colors.grey,
+                              ),
+                              tooltip: isFavorite ? 'Remove from favorites' : 'Add to favorites',
+                              onPressed: _toggleFavorite,
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
+                ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0.0),
                   child: Column(
@@ -603,26 +777,84 @@ class CourseDetailPage extends StatelessWidget {
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.all(16.0),
+                if (course['holes'] != null && course['holes'] is List && (course['holes'] as List).isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ...List.generate((course['holes'] as List).length, (i) {
+                          final hole = (course['holes'] as List)[i];
+                          String label;
+                          if (hole is String && hole.isNotEmpty) {
+                            label = hole;
+                          } else if (hole is Map && hole.isNotEmpty) {
+                            label = hole.values.first.toString();
+                          } else {
+                            label = 'Hole ${i + 1}';
+                          }
+                          final isSelected = selectedHoleIndex == i;
+                          return ChoiceChip(
+                            label: Text(label),
+                            selected: isSelected,
+                            shape: StadiumBorder(
+                              side: BorderSide(
+                                color: isSelected ? const Color(0xFF3F768E) : Colors.transparent,
+                                width: 2,
+                              ),
+                            ),
+                            selectedColor: Colors.white,
+                            backgroundColor: Colors.white,
+                            labelStyle: TextStyle(
+                              color: isSelected ? const Color(0xFF3F768E) : Colors.black,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            ),
+                            onSelected: (_) {
+                                setState(() {
+                                  selectedHoleIndex = i;
+                                });
+                              },
+                          );
+                        })
+                      ],
+                    ),
+                  ),
+                // Removed course detail data below holes selection
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Latitude: ${course['lat'] ?? "-"}', style: detailTextStyle),
-                      Text('Longitude: ${course['lon'] ?? "-"}', style: detailTextStyle),
-                      Text('Type: ${course['type'] ?? "-"}', style: detailTextStyle),
-                      ...tags.entries.map((entry) {
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: Text('${entry.key}: ${entry.value}', style: detailTextStyle),
-                        );
-                      }).toList(),
-                      ...course.keys.where((k) => k != 'id' && k != 'type' && k != 'name' && k != 'lat' && k != 'lon' && k != 'tags' && k != 'logo' && k != 'mainImage').map((k) {
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: Text('$k: ${course[k]}', style: detailTextStyle),
-                        );
-                      }).toList(),
+                      Text('Select Players', style: Theme.of(context).textTheme.headlineSmall),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: List.generate(4, (i) => ChoiceChip(
+                          label: Text('Player ${i + 1}'),
+                          selected: selectedPlayerCount == i + 1,
+                          onSelected: (_) {
+                            setState(() {
+                              selectedPlayerCount = i + 1;
+                            });
+                          },
+                        )),
+                      ),
+                      const SizedBox(height: 16),
+                      Text('Game Type', style: Theme.of(context).textTheme.headlineSmall),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: gameTypes.map((type) => ChoiceChip(
+                          label: Text(type),
+                          selected: selectedGameType == type,
+                          onSelected: (_) {
+                            setState(() {
+                              selectedGameType = type;
+                            });
+                          },
+                        )).toList(),
+                      ),
                     ],
                   ),
                 ),
@@ -631,7 +863,7 @@ class CourseDetailPage extends StatelessWidget {
           ),
           if (course['logo'] != null)
             Positioned(
-              top: screenHeight * 0.3 - 40,
+              top: safeHeight(screenHeight * 0.3 - 40, 20),
               right: 16,
               child: Container(
                 width: 80,

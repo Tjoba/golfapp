@@ -6313,9 +6313,9 @@
     },
     "logo": "assets/courses/logos/sgk.png",
     "mainImage": "assets/courses/images/sgk_001.jpg",
-    "holes": {
-      "course1": "18 hole"
-    }
+    "holes": [
+      "18 hole"
+    ]
   },
   {
     "id": 3942404,
@@ -6676,10 +6676,10 @@
       "wikidata": "Q10500917"
     },
     "logo": "assets/courses/logos/fagelbro.png",
-    "holes": {
-      "course1": "18 hole",
-      "course2": "9 hole"
-    }
+    "holes": [
+      "18 hole",
+      "9 hole"
+    ]
   },
   {
     "id": 4427161,
@@ -7510,10 +7510,10 @@
     },
     "logo": "assets/courses/logos/bro-hof.jpeg",
     "mainImage": "assets/courses/images/brohof_001.webp",
-    "holes": {
-      "course1": "18 hole",
-      "course2": "9 hole"
-    }
+    "holes": [
+      "18 hole",
+      "9 hole"
+    ]
   },
   {
     "id": 5598137,
