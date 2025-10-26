@@ -1,8 +1,59 @@
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// Top-level HomePage widget for displaying main image
+class HomePage extends StatelessWidget {
+  final String? mainImage;
+  const HomePage({super.key, this.mainImage});
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final imageHeight = screenHeight * 0.6;
+    return Scaffold(
+      body: Stack(
+        children: [
+          if (mainImage != null)
+            SizedBox(
+              height: imageHeight,
+              width: double.infinity,
+              child: Image.asset(
+                mainImage!,
+                fit: BoxFit.cover,
+              ),
+            ),
+          Positioned.fill(
+            child: Column(
+              children: [
+                SizedBox(height: imageHeight),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      'Home',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 void main() {
   runApp(const MyApp());
@@ -107,19 +158,39 @@ class MainNavigation extends StatefulWidget {
 }
 
 class _MainNavigationState extends State<MainNavigation> {
+  List<String> _generalImages = [];
+  String? _selectedGeneralImage;
   int _selectedIndex = 0;
 
-  late final List<Widget> _pages;
+  late List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
+    _loadGeneralImages();
+  }
+
+  Future<void> _loadGeneralImages() async {
+    // For now, hardcode the list. For more images, list the directory or add manually.
+    _generalImages = [
+      'assets/general/bro-hof-slott-golf-club.webp',
+      // Add more images here if available
+    ];
+    _selectRandomGeneralImage();
     _pages = <Widget>[
-      Center(child: Text('Home', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 16))),
+      HomePage(mainImage: _selectedGeneralImage),
       PlayPage(preloadedCourses: widget.preloadedCourses),
       Center(child: Text('Book', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 16))),
       YouPage(onLogout: widget.onLogout),
     ];
+    setState(() {}); // Ensure UI updates after loading images/pages
+  }
+
+  void _selectRandomGeneralImage() {
+    if (_generalImages.isNotEmpty) {
+      final rand = Random();
+      _selectedGeneralImage = _generalImages[rand.nextInt(_generalImages.length)];
+    }
   }
 
   void _onItemTapped(int index) {
@@ -131,7 +202,7 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_selectedIndex],
+      body: (_pages.isNotEmpty) ? _pages[_selectedIndex] : Container(),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         items: const <BottomNavigationBarItem>[
@@ -153,7 +224,9 @@ class _MainNavigationState extends State<MainNavigation> {
           ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Theme.of(context).colorScheme.primary,
+        selectedItemColor: const Color(0xFF3F768E),
+        selectedLabelStyle: TextStyle(color: const Color(0xFF3F768E)),
+        selectedIconTheme: const IconThemeData(color: Color(0xFF3F768E)),
         onTap: _onItemTapped,
       ),
     );
@@ -237,37 +310,43 @@ class YouPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('You'),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              if (value == 'logout') {
-                if (onLogout != null) onLogout!();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Logged out')),
-                );
-              } else if (value == 'settings') {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (context) => const SettingsPage()),
-                );
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'settings',
-                child: Text('Settings'),
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: PopupMenuButton<String>(
+                icon: const Icon(Icons.settings, color: Colors.black),
+                onSelected: (value) {
+                  if (value == 'account') {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const SettingsPage()),
+                    );
+                  } else if (value == 'logout') {
+                    if (onLogout != null) onLogout!();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Logged out')),
+                    );
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'account',
+                    child: Text('Account'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: Text('Logout'),
+                  ),
+                ],
               ),
-              const PopupMenuItem(
-                value: 'logout',
-                child: Text('Logout'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: const Center(
-        child: Text('You', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 16)),
+            ),
+            Center(
+              child: Text('You', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 16)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -281,8 +360,66 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  String? _profileImagePath;
+  final ImagePicker _picker = ImagePicker();
+  Future<void> _pickProfileImage() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from gallery'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+                  if (pickedFile != null) {
+                    final newPath = await _saveImageToDocuments(pickedFile);
+                    setState(() {
+                      _profileImagePath = newPath;
+                    });
+                    await _storage.write(key: 'profile_image_path', value: newPath);
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take a picture'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  final pickedFile = await _picker.pickImage(source: ImageSource.camera);
+                  if (pickedFile != null) {
+                    final newPath = await _saveImageToDocuments(pickedFile);
+                    setState(() {
+                      _profileImagePath = newPath;
+                    });
+                    await _storage.write(key: 'profile_image_path', value: newPath);
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<String> _saveImageToDocuments(XFile pickedFile) async {
+    final directory = await getApplicationDocumentsDirectory();
+    final fileName = 'profile_${DateTime.now().millisecondsSinceEpoch}${pickedFile.path.split('.').last.isNotEmpty ? '.${pickedFile.path.split('.').last}' : ''}';
+    final newPath = '${directory.path}/$fileName';
+    final newFile = await File(pickedFile.path).copy(newPath);
+    return newFile.path;
+  }
+  final _confirmPasswordController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _handicapController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  // Removed unused _confirmPasswordController
   final _storage = const FlutterSecureStorage();
   bool _loading = true;
 
@@ -293,45 +430,238 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _loadDetails() async {
+    final firstName = await _storage.read(key: 'first_name');
+    final lastName = await _storage.read(key: 'last_name');
+      final handicap = await _storage.read(key: 'handicap');
+      String formattedHandicap = '';
+      if (handicap != null && handicap.isNotEmpty) {
+        final value = double.tryParse(handicap);
+        if (value != null) {
+          formattedHandicap = value.toStringAsFixed(1);
+        } else {
+          formattedHandicap = handicap;
+        }
+      }
     final email = await _storage.read(key: 'email');
     final password = await _storage.read(key: 'password');
+    final profileImagePath = await _storage.read(key: 'profile_image_path');
     setState(() {
+      _firstNameController.text = firstName ?? '';
+      _lastNameController.text = lastName ?? '';
+        _handicapController.text = formattedHandicap;
       _emailController.text = email ?? '';
       _passwordController.text = password ?? '';
+      _profileImagePath = profileImagePath;
       _loading = false;
     });
   }
 
   Future<void> _saveDetails() async {
-    await _storage.write(key: 'email', value: _emailController.text);
-    await _storage.write(key: 'password', value: _passwordController.text);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Details updated')));
+    if (_passwordController.text.isNotEmpty) {
+      if (_passwordController.text != _confirmPasswordController.text) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Passwords do not match'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      await _storage.write(key: 'password', value: _passwordController.text);
+    }
+  await _storage.write(key: 'first_name', value: _firstNameController.text);
+  await _storage.write(key: 'last_name', value: _lastNameController.text);
+      String handicapValue = _handicapController.text;
+      final value = double.tryParse(handicapValue);
+      if (value != null) {
+        handicapValue = value.toStringAsFixed(1);
+      }
+      await _storage.write(key: 'handicap', value: handicapValue);
+  await _storage.write(key: 'email', value: _emailController.text);
+  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Details updated')));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(
+        title: Text('Account settings', style: Theme.of(context).textTheme.headlineMedium),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      backgroundColor: const Color(0xFFEFEDED),
+      resizeToAvoidBottomInset: true,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(24.0),
+          : SingleChildScrollView(
+              padding: EdgeInsets.only(
+                left: 24.0,
+                right: 24.0,
+                top: 24.0,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24.0,
+              ),
               child: Column(
                 children: [
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: const InputDecoration(labelText: 'Password'),
-                    obscureText: true,
+                  Center(
+                    child: Column(
+                      children: [
+                        Stack(
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            CircleAvatar(
+                              radius: 48,
+                backgroundImage: (_profileImagePath != null && File(_profileImagePath!).existsSync())
+                  ? FileImage(File(_profileImagePath!))
+                  : AssetImage('assets/profile/default-profile-picture1.jpg'),
+                              backgroundColor: Colors.grey[300],
+                // Debug print to verify asset path
+                child: (_profileImagePath == null || !File(_profileImagePath!).existsSync())
+                  ? Builder(builder: (context) {
+                    print('Using default profile image: assets/profile/default-profile-picture1.jpg');
+                    return const SizedBox();
+                  })
+                  : null,
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Color(0xFF3F768E)),
+                              onPressed: _pickProfileImage,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text('Profile picture', style: Theme.of(context).textTheme.headlineSmall),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: _saveDetails,
-                    child: const Text('Save'),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('First name', style: Theme.of(context).textTheme.headlineSmall),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: TextFormField(
+                      controller: _firstNameController,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Last name', style: Theme.of(context).textTheme.headlineSmall),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: TextFormField(
+                      controller: _lastNameController,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Handicap', style: Theme.of(context).textTheme.headlineSmall),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: TextFormField(
+                      controller: _handicapController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Email', style: Theme.of(context).textTheme.headlineSmall),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: TextFormField(
+                      controller: _emailController,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Password', style: Theme.of(context).textTheme.headlineSmall),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: TextFormField(
+                      controller: _passwordController,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      ),
+                      obscureText: true,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Confirm Password', style: Theme.of(context).textTheme.headlineSmall),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: TextFormField(
+                      controller: _confirmPasswordController,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      ),
+                      obscureText: true,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF3F768E),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: _saveDetails,
+                      child: const Text('Save', style: TextStyle(color: Colors.white)),
+                    ),
                   ),
                 ],
               ),
